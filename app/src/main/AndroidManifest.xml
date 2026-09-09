@@ -37,6 +37,16 @@
             android:name=".service.WakeWordService"
             android:foregroundServiceType="microphone"
             android:exported="false" />
+        <service
+            android:name=".service.BuddyTileService"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Buddy Mic"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".service.AlarmReceiver"
