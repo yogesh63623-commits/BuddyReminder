@@ -1,4 +1,4 @@
-﻿package com.buddy.reminder.data
+package com.buddy.reminder.data
 
 import androidx.room.*
 
@@ -6,6 +6,12 @@ import androidx.room.*
 interface ReminderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvent(event: ReminderEvent): Long
+
+    @Update
+    suspend fun updateEvent(event: ReminderEvent)
+
+    @Delete
+    suspend fun deleteEvent(event: ReminderEvent)
 
     @Query("SELECT * FROM internal_events WHERE isHandled = 0 ORDER BY id DESC LIMIT 1")
     suspend fun getLatestPendingEvent(): ReminderEvent?
