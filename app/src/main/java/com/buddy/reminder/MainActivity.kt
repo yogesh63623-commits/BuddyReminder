@@ -1,21 +1,18 @@
 package com.buddy.reminder
 
-import android.Manifest
+import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.CalendarView
-import android.widget.TextView
-import android.widget.Toast
+import android.view.animation.DecelerateInterpolator
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
+import androidx.cardview.widget.CardView
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -28,32 +25,66 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var adapter: ReminderAdapter
     private val eventList = mutableListOf<ReminderEvent>()
     private lateinit var tvSectionTitle: TextView
+    private lateinit var cardCalendar: CardView
+    private var tts: TextToSpeech? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        checkPermissions()
+        tts = TextToSpeech(this, this)
 
-        val calendarView = findViewById<CalendarView>(R.id.calendarView)
-        val rvReminders = findViewById<RecyclerView>(R.id.rvReminders)
-        val btnStartVoice = findViewById<Button>(R.id.btnStartVoice)
+        val ivLogo = findViewById<ImageView>(R.id.ivBuddyHeaderIcon)
+        val btnVoice = findViewById<Button>(R.id.btnQuickVoice)
         val btnShowAll = findViewById<Button>(R.id.btnShowAll)
+        val rvReminders = findViewById<RecyclerView>(R.id.rvReminders)
+        val calendarView = findViewById<CalendarView>(R.id.calendarView)
+        cardCalendar = findViewById(R.id.cardCalendarContainer)
         tvSectionTitle = findViewById(R.id.tvSectionTitle)
 
-        adapter = ReminderAdapter(eventList)
+        // 2) Smooth startup entry animation (Icon bounce/scale + fade in)
+        ivLogo.scaleX = 0.3f
+        ivLogo.scaleY = 0.3f
+        ivLogo.alpha = 0f
+        ivLogo.animate()
+            .scaleX(1.0f)
+            .scaleY(1.0f)
+            .alpha(1.0f)
+            .setDuration(700)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        // 4) Tapping top icon collapses or expands calendar
+        ivLogo.setOnClickListener {
+            if (cardCalendar.visibility == View.VISIBLE) {
+                cardCalendar.animate()
+                    .alpha(0f)
+                    .setDuration(250)
+                    .withEndAction { cardCalendar.visibility = View.GONE }
+                    .start()
+            } else {
+                cardCalendar.alpha = 0f
+                cardCalendar.visibility = View.VISIBLE
+                cardCalendar.animate().alpha(1f).setDuration(250).start()
+            }
+        }
+
+        // Adapter setup with Edit & Delete callbacks
+        adapter = ReminderAdapter(
+            items = eventList,
+            onEdit = { event -> showEditDialog(event) },
+            onDelete = { event -> confirmDelete(event) }
+        )
         rvReminders.layoutManager = LinearLayoutManager(this)
         rvReminders.adapter = adapter
 
-        // Load all reminders initially
         loadAllReminders()
 
-        // Filter events when tapping a specific date
         calendarView.setOnDateChangeListener { _, year, month, dayOfMonth ->
             filterEventsForDate(year, month, dayOfMonth)
         }
@@ -62,14 +93,16 @@ class MainActivity : AppCompatActivity() {
             loadAllReminders()
         }
 
-        btnStartVoice.setOnClickListener {
-            val serviceIntent = Intent(this, WakeWordService::class.java)
+        btnVoice.setOnClickListener {
+            val serviceIntent = Intent(this, WakeWordService::class.java).apply {
+                putExtra("EXTRA_ONE_SHOT", true)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)
             } else {
                 startService(serviceIntent)
             }
-            Toast.makeText(this, "Buddy Listener Active", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Listening for command...", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -79,7 +112,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadAllReminders() {
-        tvSectionTitle.text = "All Scheduled Reminders"
+        tvSectionTitle.text = "All Scheduled Events & Timings"
         lifecycleScope.launch(Dispatchers.IO) {
             val db = AppDatabase.getDatabase(applicationContext)
             val events = db.reminderDao().getAllEvents()
@@ -114,35 +147,85 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkPermissions() {
-        val permissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.RECORD_AUDIO)
+    // 3) Edit Event Dialog
+    private fun showEditDialog(event: ReminderEvent) {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("Edit Event Title")
+
+        val input = EditText(this).apply {
+            setText(event.title)
+            setSelection(event.title.length)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        builder.setView(input)
+
+        builder.setPositiveButton("Save") { _, _ ->
+            val updatedTitle = input.text.toString().trim()
+            if (updatedTitle.isNotEmpty()) {
+                val updatedEvent = event.copy(title = updatedTitle)
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val db = AppDatabase.getDatabase(applicationContext)
+                    db.reminderDao().updateEvent(updatedEvent)
+                    withContext(Dispatchers.Main) {
+                        loadAllReminders()
+                        speakFeedback("Event updated to $updatedTitle")
+                    }
+                }
             }
         }
-        if (permissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), 101)
-        }
+        builder.setNegativeButton("Cancel", null)
+        builder.show()
+    }
 
-        // Prompt for Notification Listener Access if missing
-        val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-        if (enabledListeners == null || !enabledListeners.contains(packageName)) {
-            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+    // 3) Delete Event Dialog
+    private fun confirmDelete(event: ReminderEvent) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete Reminder")
+            .setMessage("Are you sure you want to remove '${event.title}'?")
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val db = AppDatabase.getDatabase(applicationContext)
+                    db.reminderDao().deleteEvent(event)
+                    withContext(Dispatchers.Main) {
+                        loadAllReminders()
+                        speakFeedback("Reminder for ${event.title} has been deleted.")
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // 1) Dynamic voice feedback
+    private fun speakFeedback(text: String) {
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "BUDDY_UI_TTS")
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            tts?.language = Locale.US
         }
+    }
+
+    override fun onDestroy() {
+        tts?.shutdown()
+        super.onDestroy()
     }
 }
 
-class ReminderAdapter(private val items: List<ReminderEvent>) : RecyclerView.Adapter<ReminderAdapter.ViewHolder>() {
+// Custom Adapter with Remaining Countdown Timing
+class ReminderAdapter(
+    private val items: List<ReminderEvent>,
+    private val onEdit: (ReminderEvent) -> Unit,
+    private val onDelete: (ReminderEvent) -> Unit
+) : RecyclerView.Adapter<ReminderAdapter.ViewHolder>() {
 
     class ViewHolder(v: View) : RecyclerView.ViewHolder(v) {
         val tvTitle: TextView = v.findViewById(R.id.tvEventTitle)
         val tvCategory: TextView = v.findViewById(R.id.tvEventCategory)
         val tvEventTime: TextView = v.findViewById(R.id.tvEventTime)
         val tvAlarmTime: TextView = v.findViewById(R.id.tvAlarmTime)
+        val btnEdit: Button = v.findViewById(R.id.btnEditEvent)
+        val btnDelete: Button = v.findViewById(R.id.btnDeleteEvent)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -156,8 +239,22 @@ class ReminderAdapter(private val items: List<ReminderEvent>) : RecyclerView.Ada
 
         holder.tvTitle.text = item.title
         holder.tvCategory.text = item.category
-        holder.tvEventTime.text = "Event Time: " + fmt.format(Date(item.eventTimestamp))
-        holder.tvAlarmTime.text = "Reminder: " + fmt.format(Date(item.alarmTimestamp))
+        holder.tvEventTime.text = "Event: " + fmt.format(Date(item.eventTimestamp))
+
+        // Calculate remaining time
+        val now = System.currentTimeMillis()
+        val diffMs = item.alarmTimestamp - now
+        val remainingText = if (diffMs > 0) {
+            val hours = diffMs / (1000 * 60 * 60)
+            val minutes = (diffMs / (1000 * 60)) % 60
+            "Alarm rings in: ${hours}h ${minutes}m (" + fmt.format(Date(item.alarmTimestamp)) + ")"
+        } else {
+            "Reminder Passed (" + fmt.format(Date(item.alarmTimestamp)) + ")"
+        }
+
+        holder.tvAlarmTime.text = remainingText
+        holder.btnEdit.setOnClickListener { onEdit(item) }
+        holder.btnDelete.setOnClickListener { onDelete(item) }
     }
 
     override fun getItemCount() = items.size
