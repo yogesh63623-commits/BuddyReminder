@@ -1,0 +1,5 @@
+﻿<resources>
+    <style name="Theme.BuddyReminder" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#6200EE</item>
+    </style>
+</resources>
