@@ -1,4 +1,4 @@
-﻿package com.buddy.reminder
+package com.buddy.reminder
 
 import android.Manifest
 import android.content.Intent
@@ -25,9 +25,8 @@ class MainActivity : AppCompatActivity() {
         val btnStart = findViewById<Button>(R.id.btnStartService)
 
         btnNotif.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).apply {
-                putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME_KEY, "$packageName/$packageName.service.NotificationReaderService")
-            })
+            // Standard universal intent that compiles on all Android SDKs
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
         btnStart.setOnClickListener {
