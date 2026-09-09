@@ -40,7 +40,7 @@ object EventClassifier {
     }
 
     private fun extractTime(text: String): Long? {
-        val regex = ""(\d{1,2})[:.](\d{2})?\s*(am|pm)?""
+        val regex = """(\d{1,2})[:.](\d{2})?\s*(am|pm)?"""
         val matcher = Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(text)
 
         if (matcher.find()) {
