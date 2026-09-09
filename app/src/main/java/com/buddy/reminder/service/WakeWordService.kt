@@ -17,6 +17,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.core.app.NotificationCompat
 import com.buddy.reminder.data.AppDatabase
 import com.buddy.reminder.logic.EventClassifier
@@ -39,6 +40,11 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
         initSpeechRecognizer()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startListening()
+        return START_NOT_STICKY
+    }
+
     private fun startForegroundNotification() {
         val channelId = "buddy_listener_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -53,7 +59,7 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Buddy is Listening")
-            .setContentText("Say 'Hey Buddy' followed by your request...")
+            .setContentText("Speak your reminder...")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .build()
 
@@ -62,7 +68,10 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
 
     private fun initSpeechRecognizer() {
         mainHandler.post {
-            if (!SpeechRecognizer.isRecognitionAvailable(this)) return@post
+            if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                stopSelf()
+                return@post
+            }
 
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
                 setRecognitionListener(object : RecognitionListener {
@@ -70,12 +79,14 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         if (!matches.isNullOrEmpty()) {
                             processSpokenPhrase(matches[0])
+                        } else {
+                            stopSelf()
                         }
-                        restartListening()
                     }
 
                     override fun onError(error: Int) {
-                        restartListening()
+                        // Stop listening immediately on error or silence timeout to conserve battery
+                        stopSelf()
                     }
 
                     override fun onReadyForSpeech(params: Bundle?) {}
@@ -93,62 +104,65 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             }
-
-            startListening()
         }
     }
 
     private fun startListening() {
-        try {
-            speechRecognizer?.startListening(recognizerIntent)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        mainHandler.post {
+            try {
+                speechRecognizer?.startListening(recognizerIntent)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                stopSelf()
+            }
         }
-    }
-
-    private fun restartListening() {
-        mainHandler.postDelayed({
-            startListening()
-        }, 800)
     }
 
     private fun processSpokenPhrase(rawText: String) {
         val text = rawText.lowercase()
 
-        // Check if the command starts with "hey buddy"
-        if (text.contains("hey buddy") || text.contains("buddy")) {
-            scope.launch {
-                val db = AppDatabase.getDatabase(applicationContext)
+        scope.launch {
+            val db = AppDatabase.getDatabase(applicationContext)
 
-                // 1. Direct Voice Command (e.g., "Hey buddy meeting at 9 pm")
-                val directParse = EventClassifier.parse(text)
+            // Direct Voice Command check (e.g., "Hey buddy meeting at 9 pm")
+            val directParse = EventClassifier.parse(text)
 
-                if (directParse != null) {
-                    val reminderTime = directParse.eventTimeMs - (directParse.offsetMinutes * 60 * 1000)
-                    scheduleSystemAlarm(reminderTime, directParse.title)
+            if (directParse != null) {
+                val reminderTime = directParse.eventTimeMs - (directParse.offsetMinutes * 60 * 1000)
 
-                    val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                    val reminderTimeStr = timeFmt.format(Date(reminderTime))
-                    val offsetText = if (directParse.category == "FLIGHT") "3 hours" else "10 minutes"
+                db.reminderDao().insertEvent(
+                    com.buddy.reminder.data.ReminderEvent(
+                        title = directParse.title,
+                        category = directParse.category,
+                        eventTimestamp = directParse.eventTimeMs,
+                        alarmTimestamp = reminderTime,
+                        isHandled = true
+                    )
+                )
 
-                    speak("${directParse.title} reminder has been set $offsetText ahead of time for $reminderTimeStr.")
-                    return@launch
-                }
+                scheduleSystemAlarm(reminderTime, directParse.title)
 
-                // 2. Otherwise check for unhandled incoming notifications
-                val event = db.reminderDao().getLatestPendingEvent()
-                if (event != null) {
-                    scheduleSystemAlarm(event.alarmTimestamp, event.title)
-                    db.reminderDao().markAsHandled(event.id)
+                val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                val reminderTimeStr = timeFmt.format(Date(reminderTime))
+                val offsetText = if (directParse.category == "FLIGHT") "3 hours" else "10 minutes"
 
-                    val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                    val reminderTimeStr = timeFmt.format(Date(event.alarmTimestamp))
-                    val offsetText = if (event.category == "FLIGHT") "3 hours" else "10 minutes"
+                speak("${directParse.title} reminder has been set $offsetText ahead of time for $reminderTimeStr.")
+                return@launch
+            }
 
-                    speak("${event.title} reminder has been set $offsetText ahead of time for $reminderTimeStr.")
-                } else {
-                    speak("No new event details found.")
-                }
+            // Otherwise process unhandled notification
+            val event = db.reminderDao().getLatestPendingEvent()
+            if (event != null) {
+                scheduleSystemAlarm(event.alarmTimestamp, event.title)
+                db.reminderDao().markAsHandled(event.id)
+
+                val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                val reminderTimeStr = timeFmt.format(Date(event.alarmTimestamp))
+                val offsetText = if (event.category == "FLIGHT") "3 hours" else "10 minutes"
+
+                speak("${event.title} reminder has been set $offsetText ahead of time for $reminderTimeStr.")
+            } else {
+                speak("No event details found.")
             }
         }
     }
@@ -174,6 +188,16 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
 
     private fun speak(text: String) {
         mainHandler.post {
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    // Turn off service and microphone completely after speaking
+                    stopSelf()
+                }
+                override fun onError(utteranceId: String?) {
+                    stopSelf()
+                }
+            })
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "BUDDY_TTS_ID")
         }
     }
