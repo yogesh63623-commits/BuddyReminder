@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -9,11 +9,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
-    android:allowBackup="true"
-    android:icon="@mipmap/ic_launcher"
-    android:roundIcon="@mipmap/ic_launcher"
-    android:label="Buddy Reminder"
-    android:theme="@style/Theme.BuddyReminder">
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="Buddy Reminder"
+        android:roundIcon="@drawable/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BuddyReminder">
 
         <activity
             android:name=".MainActivity"
@@ -37,9 +38,10 @@
             android:name=".service.WakeWordService"
             android:foregroundServiceType="microphone"
             android:exported="false" />
+
         <service
             android:name=".service.BuddyTileService"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@drawable/ic_launcher"
             android:label="Buddy Mic"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
