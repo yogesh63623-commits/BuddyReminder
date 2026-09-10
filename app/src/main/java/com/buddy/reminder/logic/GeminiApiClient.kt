@@ -14,11 +14,15 @@ object GeminiApiClient {
 
     private var cachedKey: String = ""
 
-    private fun getKey(context: Context): String {
+    fun getKey(context: Context): String {
         if (cachedKey.isNotBlank()) return cachedKey
         return try {
-            context.assets.open("gemini_key.txt").bufferedReader().use { it.readText().trim() }.also {
-                cachedKey = it
+            val fromAssets = context.assets.open("gemini_key.txt").bufferedReader().use { it.readText().trim() }
+            if (fromAssets.isNotBlank()) {
+                cachedKey = fromAssets
+                cachedKey
+            } else {
+                ""
             }
         } catch (e: Exception) {
             ""
@@ -27,11 +31,11 @@ object GeminiApiClient {
 
     private const val SYSTEM_PROMPT = """
 You are Buddy, an autonomous temporal reasoning engine.
-Extract the scheduled event from user voice commands (even with typos or misheard speech like 'Concept' instead of 'Concert').
+Extract the scheduled event from user voice commands (e.g. 'train ticket at 7 PM', 'concert at 8 pm').
 
 Rules:
-1. title: Clear and concise.
-2. category: FLIGHT, CONCERT, TRAIN, MOVIE, MEETING, DOCTOR, or GENERAL.
+1. title: Clear and concise title.
+2. category: FLIGHT, CONCERT, TRAIN, MOVIE, MEETING, or GENERAL.
 3. event_time: 24-hour HH:mm.
 4. offset_minutes:
    - Flights: 180
@@ -39,7 +43,7 @@ Rules:
    - Trains: 60
    - Movies: 45
    - Meetings: 10
-   - Other: 15
+   - Everything else: 15
 
 Respond ONLY with valid raw JSON:
 {"title":"String","category":"String","event_time":"HH:mm","offset_minutes":Integer}
@@ -50,14 +54,14 @@ Respond ONLY with valid raw JSON:
         if (apiKey.isBlank()) return@withContext null
 
         try {
-            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
+            val endpoint = "[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey)"
             val url = URL(endpoint)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 doOutput = true
-                connectTimeout = 7000
-                readTimeout = 7000
+                connectTimeout = 6000
+                readTimeout = 6000
             }
 
             val body = JSONObject().apply {
