@@ -31,3 +31,8 @@ jobs:
         with:
           name: BuddyReminder-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
+          
+      - name: Build with Gradle
+      run: ./gradlew assembleDebug
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
