@@ -1,6 +1,5 @@
 package com.buddy.reminder.logic
 
-import com.buddy.reminder.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -12,9 +11,9 @@ import java.net.URL
 
 object GeminiApiClient {
 
-    private val API_KEY: String = BuildConfig.GEMINI_API_KEY
-    private val API_URL: String =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$API_KEY"
+    private val API_KEY: String = System.getenv("GEMINI_API_KEY") ?: ""
+    private val API_URL: String
+        get() = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$API_KEY"
 
     private const val SYSTEM_PROMPT = """
 You are Buddy, an autonomous scheduling assistant.
