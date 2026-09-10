@@ -14,6 +14,8 @@ import androidx.core.app.NotificationCompat
 import com.buddy.reminder.data.AppDatabase
 import com.buddy.reminder.data.ReminderEvent
 import com.buddy.reminder.logic.EventClassifier
+import com.buddy.reminder.logic.GeminiApiClient
+import com.buddy.reminder.logic.ParsedEvent
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -93,7 +95,6 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
                         if (lastRecognizedText.isNotBlank()) {
                             processSpokenPhrase(lastRecognizedText)
                         } else {
-                            // Restart listening cleanly if it was just an ambient pause
                             if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                                 restartListening()
                             } else {
@@ -137,11 +138,11 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
         }, 500)
     }
 
-   private fun processSpokenPhrase(spokenText: String) {
+    private fun processSpokenPhrase(spokenText: String) {
         scope.launch {
             val db = AppDatabase.getDatabase(applicationContext)
 
-            // 1. Send text to Gemini 1.5 Flash
+            // Try LLM parsing first
             val llmResponse = GeminiApiClient.analyzeEvent(spokenText)
             var parsedEvent: ParsedEvent? = null
 
@@ -149,14 +150,13 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
                 parsedEvent = EventClassifier.parseLlmResponse(llmResponse)
             }
 
-            // Fallback to local regex classifier if offline or timeout
+            // Fallback to heuristic classifier
             if (parsedEvent == null) {
                 parsedEvent = EventClassifier.parseFallback(spokenText)
             }
 
-            // 2. Schedule if detected
             if (parsedEvent != null) {
-                val reminderTime = parsedEvent.eventTimeMs - (parsedEvent.offsetMinutes * 60 * 1000)
+                val reminderTime: Long = parsedEvent.eventTimeMs - (parsedEvent.offsetMinutes * 60 * 1000)
 
                 val id = db.reminderDao().insertEvent(
                     ReminderEvent(
@@ -185,7 +185,6 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
                 return@launch
             }
 
-            // 3. Fallback: Check for unhandled incoming notification
             val pendingEvent = db.reminderDao().getLatestPendingEvent()
             if (pendingEvent != null) {
                 scheduleSystemAlarm(pendingEvent.alarmTimestamp, pendingEvent.title, pendingEvent.id.toInt())
@@ -197,7 +196,7 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
 
                 speak("${pendingEvent.title} confirmed. Reminder set $offsetText ahead for $reminderTimeStr.")
             } else {
-                speak("I couldn't detect any event details. Please try again.")
+                speak("I heard: $spokenText, but couldn't detect any event details.")
             }
         }
     }
