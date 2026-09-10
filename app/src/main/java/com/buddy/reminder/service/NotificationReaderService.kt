@@ -25,15 +25,14 @@ class NotificationReaderService : NotificationListenerService() {
         if (combined.isBlank()) return
 
         serviceScope.launch {
-            // 1. Try Gemini LLM analysis first
-            val llmResponse = GeminiApiClient.analyzeEvent(combined)
+            // Pass applicationContext as the first argument
+            val llmResponse = GeminiApiClient.analyzeEvent(applicationContext, combined)
             var parsed = if (!llmResponse.isNullOrBlank()) {
                 EventClassifier.parseLlmResponse(llmResponse)
             } else {
                 null
             }
 
-            // 2. Fallback to heuristic parser if offline or null
             if (parsed == null) {
                 parsed = EventClassifier.parseFallback(combined)
             }
