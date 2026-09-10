@@ -143,7 +143,7 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
             val db = AppDatabase.getDatabase(applicationContext)
 
             // Try LLM parsing first
-            val llmResponse = GeminiApiClient.analyzeEvent(spokenText)
+            val llmResponse = GeminiApiClient.analyzeEvent(applicationContext, spokenText)
             var parsedEvent: ParsedEvent? = null
 
             if (!llmResponse.isNullOrBlank()) {
