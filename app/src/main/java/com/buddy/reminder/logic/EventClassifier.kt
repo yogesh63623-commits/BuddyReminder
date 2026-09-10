@@ -20,7 +20,7 @@ object EventClassifier {
 
             val title = obj.getString("title")
             val category = obj.getString("category")
-            val timeStr = obj.getString("event_time") // Format: "HH:mm"
+            val timeStr = obj.getString("event_time")
             val offset = obj.getLong("offset_minutes")
 
             val parts = timeStr.split(":")
@@ -44,7 +44,6 @@ object EventClassifier {
                 offsetMinutes = offset
             )
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -61,12 +60,12 @@ object EventClassifier {
                 title = "Flight Departure"
                 offsetMinutes = 180
             }
-            lower.contains("concert") || lower.contains("show") || lower.contains("gig") -> {
+            lower.contains("concert") || lower.contains("concept") || lower.contains("show") || lower.contains("gig") -> {
                 category = "CONCERT"
                 title = "Concert Event"
                 offsetMinutes = 120
             }
-            lower.contains("train") || lower.contains("railway") || lower.contains("express") -> {
+            lower.contains("train") || lower.contains("railway") || lower.contains("express") || lower.contains("ticket") -> {
                 category = "TRAIN"
                 title = "Train Departure"
                 offsetMinutes = 60
@@ -83,7 +82,7 @@ object EventClassifier {
             }
             else -> {
                 category = "GENERAL"
-                title = "Scheduled Reminder"
+                title = "Reminder"
                 offsetMinutes = 15
             }
         }
@@ -99,16 +98,17 @@ object EventClassifier {
     }
 
     private fun extractTime(text: String): Long? {
-        val regex = """\b(\d{1,2})(?:[:;.](\d{2}))?\s*(am|pm)\b"""
+        // Tolerates spaces between hours, colons, and minutes like "8 :00 pm" or "8: 00pm"
+        val regex = """\b(\d{1,2})\s*(?:[:;.]\s*(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\b"""
         val matcher = Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(text)
 
         if (matcher.find()) {
             var hour = matcher.group(1)?.toIntOrNull() ?: return null
             val minute = matcher.group(2)?.toIntOrNull() ?: 0
-            val ampm = matcher.group(3)?.lowercase()
+            val ampmRaw = matcher.group(3)?.lowercase()?.replace(".", "") ?: ""
 
-            if (ampm == "pm" && hour < 12) hour += 12
-            if (ampm == "am" && hour == 12) hour = 0
+            if (ampmRaw == "pm" && hour < 12) hour += 12
+            if (ampmRaw == "am" && hour == 12) hour = 0
 
             val cal = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, hour)
