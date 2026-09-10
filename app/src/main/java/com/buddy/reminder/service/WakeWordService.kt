@@ -137,37 +137,55 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
         }, 500)
     }
 
-    private fun processSpokenPhrase(spokenText: String) {
+   private fun processSpokenPhrase(spokenText: String) {
         scope.launch {
             val db = AppDatabase.getDatabase(applicationContext)
 
-            // 1. Direct speech parsing (e.g. "Meeting at 11pm" or "Hey buddy flight at 6am")
-            val directParse = EventClassifier.parse(spokenText)
+            // 1. Send text to Gemini 1.5 Flash
+            val llmResponse = GeminiApiClient.analyzeEvent(spokenText)
+            var parsedEvent: ParsedEvent? = null
 
-            if (directParse != null) {
-                val reminderTime = directParse.eventTimeMs - (directParse.offsetMinutes * 60 * 1000)
+            if (!llmResponse.isNullOrBlank()) {
+                parsedEvent = EventClassifier.parseLlmResponse(llmResponse)
+            }
+
+            // Fallback to local regex classifier if offline or timeout
+            if (parsedEvent == null) {
+                parsedEvent = EventClassifier.parseFallback(spokenText)
+            }
+
+            // 2. Schedule if detected
+            if (parsedEvent != null) {
+                val reminderTime = parsedEvent.eventTimeMs - (parsedEvent.offsetMinutes * 60 * 1000)
 
                 val id = db.reminderDao().insertEvent(
                     ReminderEvent(
-                        title = directParse.title,
-                        category = directParse.category,
-                        eventTimestamp = directParse.eventTimeMs,
+                        title = parsedEvent.title,
+                        category = parsedEvent.category,
+                        eventTimestamp = parsedEvent.eventTimeMs,
                         alarmTimestamp = reminderTime,
                         isHandled = true
                     )
                 )
 
-                scheduleSystemAlarm(reminderTime, directParse.title, id.toInt())
+                scheduleSystemAlarm(reminderTime, parsedEvent.title, id.toInt())
 
                 val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
                 val reminderTimeStr = timeFmt.format(Date(reminderTime))
-                val offsetText = if (directParse.category == "FLIGHT") "3 hours" else "10 minutes"
 
-                speak("${directParse.title} has been scheduled. Your reminder is set for $reminderTimeStr, which is $offsetText ahead.")
+                val offsetHours = parsedEvent.offsetMinutes / 60
+                val offsetRemMins = parsedEvent.offsetMinutes % 60
+                val offsetText = when {
+                    offsetHours > 0 && offsetRemMins > 0 -> "$offsetHours hours and $offsetRemMins minutes"
+                    offsetHours > 0 -> "$offsetHours hour${if (offsetHours > 1) "s" else ""}"
+                    else -> "$offsetRemMins minutes"
+                }
+
+                speak("${parsedEvent.title} has been scheduled. Your reminder is set for $reminderTimeStr, which is $offsetText ahead.")
                 return@launch
             }
 
-            // 2. Fallback: Check for unhandled incoming notifications (e.g. user just says "Hey Buddy")
+            // 3. Fallback: Check for unhandled incoming notification
             val pendingEvent = db.reminderDao().getLatestPendingEvent()
             if (pendingEvent != null) {
                 scheduleSystemAlarm(pendingEvent.alarmTimestamp, pendingEvent.title, pendingEvent.id.toInt())
@@ -179,7 +197,7 @@ class WakeWordService : Service(), TextToSpeech.OnInitListener {
 
                 speak("${pendingEvent.title} confirmed. Reminder set $offsetText ahead for $reminderTimeStr.")
             } else {
-                speak("I heard: $spokenText, but couldn't detect a meeting or flight time.")
+                speak("I couldn't detect any event details. Please try again.")
             }
         }
     }
