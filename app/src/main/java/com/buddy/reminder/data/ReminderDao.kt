@@ -19,8 +19,8 @@ interface ReminderDao {
     @Query("UPDATE internal_events SET isHandled = 1 WHERE id = :id")
     suspend fun markAsHandled(id: Long)
 
-    @Query("SELECT * FROM internal_events ORDER BY eventTimestamp ASC")
-    suspend fun getAllEvents(): List<ReminderEvent>
+    @Query("SELECT * FROM reminders ORDER BY eventTimestamp ASC")
+    fun getAllEventsFlow(): kotlinx.coroutines.flow.Flow<List<ReminderEvent>>
 
     @Query("SELECT * FROM internal_events WHERE eventTimestamp >= :start AND eventTimestamp < :end ORDER BY eventTimestamp ASC")
     suspend fun getEventsForRange(start: Long, end: Long): List<ReminderEvent>
