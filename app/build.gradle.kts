@@ -46,3 +46,18 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }
+
+   // Add this at the very bottom of app/build.gradle.kts
+tasks.register("generateApiKeyAsset") {
+    val outputDir = file("$projectDir/src/main/assets")
+    outputs.dir(outputDir)
+    doLast {
+        outputDir.mkdirs()
+        val key = System.getenv("GEMINI_API_KEY") ?: ""
+        file("$outputDir/gemini_key.txt").writeText(key.trim())
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("generateApiKeyAsset")
+}
