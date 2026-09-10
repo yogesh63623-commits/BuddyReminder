@@ -1,55 +1,41 @@
 package com.buddy.reminder.logic
 
+import com.buddy.reminder.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
 object GeminiApiClient {
 
-    // Insert your Gemini API Key here
-    private const val API_KEY = "YOUR_GEMINI_API_KEY"
-    private const val API_URL =
+    private val API_KEY: String = BuildConfig.GEMINI_API_KEY
+    private val API_URL: String =
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$API_KEY"
 
     private const val SYSTEM_PROMPT = """
-You are Buddy, an autonomous temporal reasoning and reminder scheduling engine.
-Analyze user voice commands or notification text and extract event details.
-
-You must:
-1. Identify the event title (concise, clear).
-2. Classify category (e.g., FLIGHT, CONCERT, TRAIN, MOVIE, MEETING, DOCTOR, GENERAL).
-3. Extract the exact event time in 24-hour format (HH:mm).
-4. Intelligently deduce the required advance preparation offset in minutes:
-   - Flights: 180 (3 hours prior)
-   - Concerts / Shows: 120 (2 hours prior)
-   - Train / Bus departures: 60 (1 hour prior)
-   - Movies / Cinema: 45 (45 minutes prior)
-   - Doctor / Clinic visits: 30 (30 minutes prior)
-   - Work / Casual Meetings: 10 (10 minutes prior)
-   - Everything else: 15 (15 minutes prior)
-
-Respond ONLY with a valid JSON object matching this schema, with no markdown fences, backticks, or extra text:
+You are Buddy, an autonomous scheduling assistant.
+Extract the event details from natural language input.
+Output strict JSON format only:
 {"title":"String","category":"String","event_time":"HH:mm","offset_minutes":Integer}
 """
 
     suspend fun analyzeEvent(text: String): String? = withContext(Dispatchers.IO) {
+        if (API_KEY.isBlank()) return@withContext null
+
         try {
             val url = URL(API_URL)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 doOutput = true
-                connectTimeout = 5000
-                readTimeout = 5000
+                connectTimeout = 6000
+                readTimeout = 6000
             }
 
-            // Build request payload
             val body = JSONObject().apply {
                 val contents = JSONArray().apply {
                     put(JSONObject().apply {
