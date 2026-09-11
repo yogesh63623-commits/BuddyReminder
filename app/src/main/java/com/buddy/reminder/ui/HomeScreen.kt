@@ -12,16 +12,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.buddy.reminder.data.ReminderEvent
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     events: List<ReminderEvent>,
@@ -30,7 +29,6 @@ fun HomeScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    // Dynamic greeting based on current hour
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when (hour) {
@@ -41,10 +39,12 @@ fun HomeScreen(
         }
     }
 
-    // Filter events based on the search bar input
     val filteredEvents = remember(events, searchQuery) {
         if (searchQuery.isBlank()) events
-        else events.filter { it.title.contains(searchQuery, ignoreCase = true) || it.category.contains(searchQuery, ignoreCase = true) }
+        else events.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.category.contains(searchQuery, ignoreCase = true)
+        }
     }
 
     Scaffold(
@@ -99,7 +99,6 @@ fun HomeScreen(
         ) {
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Greeting Header
             Text(
                 text = greeting,
                 fontSize = 26.sp,
@@ -115,7 +114,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Search Bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -142,7 +140,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Section Label
             Text(
                 text = "TODAY",
                 fontSize = 13.sp,
@@ -153,7 +150,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Event Cards List
             if (filteredEvents.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -164,7 +160,7 @@ fun HomeScreen(
                     Text(
                         text = "No reminders scheduled.\nTap ＋ to speak or add one!",
                         color = Color.Gray,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
@@ -187,7 +183,6 @@ fun ReminderCard(event: ReminderEvent) {
     val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
     val formattedTime = timeFormat.format(Date(event.eventTimestamp))
 
-    // Match icons/emojis dynamically to category
     val emoji = when (event.category.uppercase()) {
         "TRAIN" -> "🚆"
         "FLIGHT" -> "✈️"
@@ -214,25 +209,18 @@ fun ReminderCard(event: ReminderEvent) {
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 16.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "$emoji  ${event.title}",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+            Text(
+                text = "$emoji  ${event.title}",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
 
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
                 text = formattedTime,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
